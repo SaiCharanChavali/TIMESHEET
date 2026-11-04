@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../backend/src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  ADMIN
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  users     User[]
+}
+
+// Attendance rules live here rather than in code so they can change without a release.
+model Shift {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  startTime         String // "HH:mm" in the office timezone
+  endTime           String // "HH:mm" in the office timezone
+  graceMinutes      Int      @default(15)
+  fullDayMinutes    Int      @default(480)
+  halfDayMinutes    Int      @default(240)
+  overtimeAfterMins Int      @default(540)
+  weeklyOffDays     Int[]    @default([0, 6]) // 0 = Sunday ... 6 = Saturday
+  createdAt         DateTime @default(now())
+  users             User[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  employeeCode String   @unique
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  active       Boolean  @default(true)
+  // Incremented on password change so that older login cookies stop working.
+  tokenVersion Int      @default(0)
+  // Set when an admin issues a temporary password; the user must replace it before doing anything else.
+  mustChangePassword Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  shiftId      String?
+  shift        Shift?      @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  managerId    String?
+  manager      User?       @relation("Reports", fields: [managerId], references: [id], onDelete: SetNull)
+  reports      User[]      @relation("Reports")
+
+  passwordResetTokens PasswordResetToken[]
+  attendance          Attendance[]
+  corrections         CorrectionRequest[] @relation("CorrectionSubject")
+  correctionsReviewed CorrectionRequest[] @relation("CorrectionReviewer")
+  timesheets          Timesheet[]         @relation("TimesheetSubject")
+  timesheetsReviewed  Timesheet[]         @relation("TimesheetReviewer")
+
+  @@index([managerId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  HALF_DAY
+  ABSENT
+}
+
+model Holiday {
+  id        String   @id @default(uuid())
+  date      DateTime @unique @db.Date
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model Attendance {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date // The office-timezone calendar day
+
+  checkInAt  DateTime
+  checkOutAt DateTime?
+
+  // Rules copied at check-in, so that editing a shift later can't change past attendance.
+  shiftName         String
+  shiftStart        String
+  shiftEnd          String
+  graceMinutes      Int
+  fullDayMinutes    Int
+  halfDayMinutes    Int
+  overtimeAfterMins Int
+  // False on weekly offs and holidays.
+  scheduled         Boolean
+
+  lateMinutes       Int               @default(0)
+  // These stay empty until check-out.
+  workedMinutes     Int?
+  breakMinutes      Int?
+  earlyLeaveMinutes Int?
+  overtimeMinutes   Int?
+  status            AttendanceStatus?
+  // Set when an approved correction has changed this day.
+  correctedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  breaks    Break[]
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model Break {
+  id           String     @id @default(uuid())
+  attendanceId String
+  attendance   Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  startAt      DateTime
+  endAt        DateTime?
+
+  @@index([attendanceId])
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model CorrectionRequest {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation("CorrectionSubject", fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+
+  requestedCheckInAt    DateTime
+  requestedCheckOutAt   DateTime
+  requestedBreakMinutes Int
+  reason                String
+
+  // What the day looked like when requested, kept as a history of the change.
+  originalCheckInAt    DateTime?
+  originalCheckOutAt   DateTime?
+  originalBreakMinutes Int?
+
+  status     CorrectionStatus @default(PENDING)
+  reviewerId String?
+  reviewer   User?            @relation("CorrectionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewedAt DateTime?
+  reviewNote String?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, date])
+  @@index([status])
+}
+
+enum TimesheetStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+// A month with no row here hasn't been submitted yet.
+model Timesheet {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation("TimesheetSubject", fields: [userId], references: [id], onDelete: Cascade)
+  periodStart DateTime @db.Date
+
+  status          TimesheetStatus
+  submittedAt     DateTime
+  workedMinutes   Int
+  overtimeMinutes Int
+  // Each day's status when submitted. Later shift or holiday changes can't alter a locked month.
+  statuses        Json
+
+  reviewerId String?
+  reviewer   User?     @relation("TimesheetReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewedAt DateTime?
+  reviewNote String?
+
+  @@unique([userId, periodStart])
+  @@index([status])
+}

@@ -1,0 +1,21 @@
+{
+  "name": "timesheet",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "database"
+  ],
+  "scripts": {
+    "setup": "npm run setup -w database",
+    "dev": "concurrently -n db,api,web -c blue,green,magenta \"npm start -w database\" \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "test": "npm test -w backend",
+    "typecheck": "npm run typecheck -w database && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "build": "npm run build -w frontend",
+    "db:migrate": "npm run migrate -w database",
+    "db:seed": "npm run seed -w database"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

@@ -1,0 +1,63 @@
+@import '@fontsource-variable/inter';
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #fff3eb;
+  --color-brand-100: #ffe4d1;
+  --color-brand-200: #ffc9a3;
+  --color-brand-500: #f26b1d;
+  /* White text on this shade meets the 4.5:1 contrast minimum. */
+  --color-brand-600: #d4500c;
+  --color-brand-700: #b0420a;
+
+  --color-navy: #14233b;
+  --color-page: #f5f6f8;
+}
+
+body {
+  @apply bg-page text-navy antialiased;
+}
+
+/* Slim, rounded scrollbars with no arrow buttons. The transparent border insets the thumb from the edge. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: var(--color-slate-300) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-400) padding-box;
+}
+
+/* Browsers without the styling above. Chromium would ignore the styling if it saw these properties too. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-slate-300) transparent;
+  }
+}
+
+/* For areas that are obviously swipeable, like the navigation on a phone. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
