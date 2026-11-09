@@ -23,8 +23,8 @@ const shiftFields = z.object({
   weeklyOffDays: z.array(z.number().int().min(0).max(6)).max(6, 'At least one day must be a working day')
     .transform((days) => [...new Set(days)].sort()),
 })
-  // "HH:mm" strings sort chronologically, so plain comparison is correct here.
-  .refine((s) => s.endTime > s.startTime, 'End time must be after start time. Overnight shifts are not supported yet.')
+  // An end time earlier than the start time is an overnight shift, finishing the next morning.
+  .refine((s) => s.endTime !== s.startTime, 'Start and end time cannot be the same')
   .refine((s) => s.halfDayMinutes <= s.fullDayMinutes, 'Half-day minutes cannot be more than full-day minutes')
   .refine((s) => s.overtimeAfterMins >= s.fullDayMinutes, 'Overtime cannot start before a full day is complete');
 

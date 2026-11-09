@@ -25,6 +25,9 @@ export async function loginAs(email: string, password = PASSWORD) {
 }
 
 export async function resetDb() {
+  // Alerts, their events and notifications belong to users and go with them.
+  await db.forgottenCheckoutSettings.deleteMany();
+  await db.jobRun.deleteMany();
   await db.passwordResetToken.deleteMany();
   await db.user.deleteMany();
   await db.department.deleteMany();

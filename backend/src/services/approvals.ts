@@ -2,9 +2,10 @@ import { Prisma, Role, type PrismaClient, type User } from '../generated/prisma/
 import { db } from '../lib/db.js';
 import { env } from '../lib/env.js';
 import { HttpError } from '../lib/errors.js';
-import { dayToDb, dbToDay, officeDateTime, officeTime, weekday } from '../lib/officeTime.js';
+import { addDays, dayToDb, dbToDay, isOvernight, officeDateTime, officeTime, weekday } from '../lib/officeTime.js';
 import { getTimesheet, monthStart } from './attendance.js';
 import { calcDayWithBreakMs, type DayRules } from './attendanceCalc.js';
+import { resolveAlertForAttendance } from './forgottenCheckout.js';
 
 type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
@@ -79,8 +80,14 @@ export async function createCorrection(user: User, input: CorrectionInput, now =
   if (date > today) throw new HttpError(400, 'You cannot correct a future date');
   if (date < officeTime(user.createdAt).date) throw new HttpError(400, 'This date is before you joined');
 
+  // On an overnight shift, a check-out earlier in the day than the check-in is the next morning.
+  const [dayRecord, shift] = await Promise.all([
+    db.attendance.findUnique({ where: { userId_date: { userId: user.id, date: dayToDb(date) } } }),
+    user.shiftId ? db.shift.findUnique({ where: { id: user.shiftId } }) : null,
+  ]);
+  const overnight = dayRecord ? isOvernight(dayRecord.shiftStart, dayRecord.shiftEnd) : !!shift && isOvernight(shift.startTime, shift.endTime);
   const requestedCheckInAt = officeDateTime(date, input.checkIn);
-  const requestedCheckOutAt = officeDateTime(date, input.checkOut);
+  const requestedCheckOutAt = officeDateTime(overnight && input.checkOut <= input.checkIn ? addDays(date, 1) : date, input.checkOut);
   if (requestedCheckOutAt <= requestedCheckInAt) throw new HttpError(400, 'Check-out must be after check-in');
   if (requestedCheckOutAt > now) throw new HttpError(400, 'Check-out cannot be in the future');
   const lengthMinutes = (requestedCheckOutAt.getTime() - requestedCheckInAt.getTime()) / 60000;
@@ -189,6 +196,7 @@ export async function approveCorrection(actor: User, id: string, now = new Date(
       // Only the total is known after a correction, so the individual break times no longer apply.
       await tx.break.deleteMany({ where: { attendanceId: existing.id } });
       await tx.attendance.update({ where: { id: existing.id }, data });
+      await resolveAlertForAttendance(tx, existing.id, now, 'CORRECTED');
     } else {
       await tx.attendance.create({ data: { ...rules, ...data, userId: request.userId, date: request.date } });
     }

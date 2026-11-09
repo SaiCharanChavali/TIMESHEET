@@ -10,7 +10,9 @@ import { approvalsRouter } from './routes/approvals.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { authRouter } from './routes/auth.js';
 import { departmentsRouter } from './routes/departments.js';
+import { forgottenCheckoutsRouter } from './routes/forgottenCheckouts.js';
 import { holidaysRouter } from './routes/holidays.js';
+import { notificationsRouter } from './routes/notifications.js';
 import { shiftsRouter } from './routes/shifts.js';
 import { usersRouter } from './routes/users.js';
 
@@ -27,6 +29,8 @@ app.use('/api/departments', departmentsRouter);
 app.use('/api/shifts', shiftsRouter);
 app.use('/api/holidays', holidaysRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use('/api/forgotten-checkouts', forgottenCheckoutsRouter);
+app.use('/api/notifications', notificationsRouter);
 app.use('/api', approvalsRouter);
 
 app.use('/api', (_req, res) => {

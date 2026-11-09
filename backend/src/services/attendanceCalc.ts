@@ -1,5 +1,5 @@
 import type { AttendanceStatus } from '../generated/prisma/client.js';
-import { officeTime, timeToMinutes } from '../lib/officeTime.js';
+import { isOvernight, officeTime, timeToMinutes } from '../lib/officeTime.js';
 
 export interface DayRules {
   shiftStart: string;
@@ -11,10 +11,21 @@ export interface DayRules {
   scheduled: boolean;
 }
 
+// The gap between two times of day. On an overnight shift the gap can cross midnight, so it is taken as
+// the nearer way round the clock (within 12 hours either side). Day shifts keep the plain difference.
+function minutesBetween(from: number, to: number, overnight: boolean) {
+  const diff = to - from;
+  if (!overnight) return diff;
+  if (diff > 720) return diff - 1440;
+  if (diff <= -720) return diff + 1440;
+  return diff;
+}
+
 // Arriving within the grace period isn't late. Past it, lateness counts from the shift start.
 export function calcLateMinutes(checkInAt: Date, rules: DayRules) {
   if (!rules.scheduled) return 0;
-  const late = officeTime(checkInAt).minutes - timeToMinutes(rules.shiftStart);
+  const overnight = isOvernight(rules.shiftStart, rules.shiftEnd);
+  const late = minutesBetween(timeToMinutes(rules.shiftStart), officeTime(checkInAt).minutes, overnight);
   return late > rules.graceMinutes ? late : 0;
 }
 
@@ -46,7 +57,8 @@ export function calcDayWithBreakMs(
     return { workedMinutes, breakMinutes, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: workedMinutes, status: 'PRESENT' };
   }
 
-  const earlyLeaveMinutes = Math.max(0, timeToMinutes(rules.shiftEnd) - officeTime(checkOutAt).minutes);
+  const overnight = isOvernight(rules.shiftStart, rules.shiftEnd);
+  const earlyLeaveMinutes = Math.max(0, minutesBetween(officeTime(checkOutAt).minutes, timeToMinutes(rules.shiftEnd), overnight));
   const overtimeMinutes = Math.max(0, workedMinutes - rules.overtimeAfterMins);
 
   let status: AttendanceStatus;

@@ -244,7 +244,7 @@ describe('shifts', () => {
   it.each([
     ['badly formatted time', { startTime: '9am' }],
     ['impossible time', { endTime: '25:00' }],
-    ['end before start', { startTime: '18:00', endTime: '09:00' }],
+    ['same start and end', { startTime: '09:00', endTime: '09:00' }],
     ['half day over full day', { halfDayMinutes: 500 }],
     ['overtime before full day', { overtimeAfterMins: 400 }],
     ['negative grace', { graceMinutes: -1 }],
@@ -252,6 +252,13 @@ describe('shifts', () => {
   ])('rejects %s', async (_label, over) => {
     const { agent } = await admin();
     expect((await agent.post('/api/shifts').send(shift(over))).status).toBe(400);
+  });
+
+  it('accepts an overnight shift, where the end is earlier in the day than the start', async () => {
+    const { agent } = await admin();
+    const res = await agent.post('/api/shifts').send(shift({ name: 'Night', startTime: '22:00', endTime: '06:00' }));
+    expect(res.status).toBe(201);
+    expect(res.body.shift).toMatchObject({ startTime: '22:00', endTime: '06:00' });
   });
 
   it('refuses to delete a shift that still has employees', async () => {

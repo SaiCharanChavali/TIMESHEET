@@ -15,6 +15,16 @@ const schema = z.object({
     }
   }, 'OFFICE_TIMEZONE must be a valid IANA timezone'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Email is sent only when SMTP_HOST is set. Otherwise it is logged in development and recorded as not sent.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().default(587),
+  // "true" for port 465 (TLS from the start). Port 587 upgrades with STARTTLS instead.
+  SMTP_SECURE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default('ShimentoX Timesheet <no-reply@localhost>'),
+  // How often background jobs (such as forgotten check-out alerts) run. 0 turns them off.
+  JOB_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(60),
 });
 
 export const env = schema.parse(process.env);

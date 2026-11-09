@@ -45,3 +45,13 @@ export const timeToMinutes = (hhmm: string) => {
   const [hours, minutes] = hhmm.split(':').map(Number);
   return hours * 60 + minutes;
 };
+
+// A shift whose end is earlier in the day than its start finishes the next morning.
+export const isOvernight = (shiftStart: string, shiftEnd: string) => shiftEnd < shiftStart;
+
+// The moment a shift that starts on this office day is scheduled to end.
+export const shiftEndAt = (day: string, shiftStart: string, shiftEnd: string) =>
+  officeDateTime(isOvernight(shiftStart, shiftEnd) ? addDays(day, 1) : day, shiftEnd);
+
+export const minutesToTime = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;

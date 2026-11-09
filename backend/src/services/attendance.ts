@@ -2,8 +2,9 @@ import { Prisma, Role, type Attendance, type Break, type PrismaClient, type User
 import { db } from '../lib/db.js';
 import { env } from '../lib/env.js';
 import { HttpError } from '../lib/errors.js';
-import { addDays, dayToDb, dbToDay, officeTime, weekday } from '../lib/officeTime.js';
+import { addDays, dayToDb, dbToDay, isOvernight, officeDateTime, officeTime, shiftEndAt, timeToMinutes, weekday } from '../lib/officeTime.js';
 import { calcDay, calcLateMinutes } from './attendanceCalc.js';
+import { resolveAlertForAttendance } from './forgottenCheckout.js';
 
 type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 type RecordWithBreaks = Attendance & { breaks: Break[] };
@@ -23,14 +24,40 @@ async function shiftFor(user: User) {
   return user.shiftId ? db.shift.findUnique({ where: { id: user.shiftId } }) : null;
 }
 
+const overnightRecord = (record: { shiftStart: string; shiftEnd: string }) => isOvernight(record.shiftStart, record.shiftEnd);
+
+// The record someone is working on now: today's, or last night's if an overnight shift is still open.
+async function activeRecord(client: Tx | typeof db, userId: string, now: Date) {
+  const today = officeTime(now).date;
+  const todays = await client.attendance.findUnique({ where: { userId_date: { userId, date: dayToDb(today) } } });
+  if (todays) return todays;
+  const last = await client.attendance.findUnique({ where: { userId_date: { userId, date: dayToDb(addDays(today, -1)) } } });
+  return last && !last.checkOutAt && overnightRecord(last) ? last : null;
+}
+
+// What the Home page shows. After a night shift ends, it keeps showing that shift until halfway to the
+// next one, so that someone who has just checked out isn't immediately offered a fresh check-in.
+async function displayedRecord(userId: string, now: Date) {
+  const active = await activeRecord(db, userId, now);
+  if (active) return active;
+  const today = officeTime(now).date;
+  const yesterday = addDays(today, -1);
+  const last = await db.attendance.findUnique({ where: { userId_date: { userId, date: dayToDb(yesterday) } } });
+  if (!last || !overnightRecord(last)) return null;
+  const endedAt = shiftEndAt(yesterday, last.shiftStart, last.shiftEnd).getTime();
+  const nextStartAt = officeDateTime(today, last.shiftStart).getTime();
+  return now.getTime() < (endedAt + nextStartAt) / 2 ? last : null;
+}
+
 export async function getToday(user: User, now = new Date()) {
   const { date } = officeTime(now);
+  const active = await displayedRecord(user.id, now);
   const [shift, holiday, record, missed] = await Promise.all([
     shiftFor(user),
     db.holiday.findUnique({ where: { date: dayToDb(date) } }),
-    db.attendance.findUnique({ where: { userId_date: { userId: user.id, date: dayToDb(date) } }, include: { breaks: true } }),
+    active ? db.attendance.findUnique({ where: { id: active.id }, include: { breaks: true } }) : null,
     db.attendance.findFirst({
-      where: { userId: user.id, checkOutAt: null, date: { lt: dayToDb(date) } },
+      where: { userId: user.id, checkOutAt: null, date: { lt: dayToDb(date) }, ...(active ? { id: { not: active.id } } : {}) },
       orderBy: { date: 'desc' },
     }),
   ]);
@@ -50,7 +77,11 @@ export async function checkIn(user: User, now = new Date()) {
   const shift = await shiftFor(user);
   if (!shift) throw new HttpError(409, 'You have no shift assigned yet. Please ask your admin to assign one.');
 
-  const { date } = officeTime(now);
+  const office = officeTime(now);
+  // Arriving after midnight on an overnight shift belongs to the shift that started the evening before.
+  const date = isOvernight(shift.startTime, shift.endTime) && office.minutes < timeToMinutes(shift.endTime)
+    ? addDays(office.date, -1)
+    : office.date;
   const holiday = await db.holiday.findUnique({ where: { date: dayToDb(date) } });
   const rules = {
     shiftStart: shift.startTime,
@@ -75,11 +106,10 @@ export async function checkIn(user: User, now = new Date()) {
   }
 }
 
-// Locks today's record, so that a double-click or a second tab can't apply the same action twice.
+// Locks the current record, so that a double-click or a second tab can't apply the same action twice.
 function withTodayRecord(user: User, now: Date, action: (tx: Tx, record: RecordWithBreaks) => Promise<void>) {
-  const date = dayToDb(officeTime(now).date);
   return db.$transaction(async (tx) => {
-    const existing = await tx.attendance.findUnique({ where: { userId_date: { userId: user.id, date } } });
+    const existing = await activeRecord(tx, user.id, now);
     if (!existing) throw new HttpError(409, 'You have not checked in today');
 
     await tx.$queryRaw`SELECT id FROM "Attendance" WHERE id = ${existing.id} FOR UPDATE`;
@@ -113,6 +143,7 @@ export function checkOut(user: User, now = new Date()) {
       where: { id: record.id },
       data: { checkOutAt: now, ...calcDay(record.checkInAt, now, breaks, record) },
     });
+    await resolveAlertForAttendance(tx, record.id, now, 'CHECKED_OUT');
   });
 }
 
@@ -120,7 +151,9 @@ export function checkOut(user: User, now = new Date()) {
 function dayStatus(day: string, today: string, record: RecordWithBreaks | undefined, holiday: string | null, weeklyOffDays: number[] | null) {
   if (record) {
     if (record.status) return record.status;
-    if (day !== today) return 'MISSING_CHECK_OUT';
+    // An overnight shift that started yesterday evening is still under way this morning.
+    const ongoing = day === today || (day === addDays(today, -1) && overnightRecord(record));
+    if (!ongoing) return 'MISSING_CHECK_OUT';
     return record.breaks.some((b) => !b.endAt) ? 'ON_BREAK' : 'IN_PROGRESS';
   }
   if (holiday) return 'HOLIDAY';
