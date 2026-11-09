@@ -12,14 +12,14 @@ If your antivirus or firewall asks about `postgres.exe`, allow it. Otherwise the
 npm install
 cp backend/.env.example backend/.env  # then fill in JWT_SECRET (the file shows how to generate one)
 npm run setup                        # creates the tables and the demo accounts
-npm run dev
+npm start                            # starts everything and opens the browser
 ```
 
-Open http://localhost:5173.
+The app opens in your browser at http://localhost:5015. Press Ctrl+C in the terminal to stop everything.
 
 | Demo account | Role | Password |
 |---|---|---|
-| `admin@example.com` | Admin | `ChangeMe123!` |
+| `admin@shimento.com` | Admin | `Admin123` |
 | `manager@example.com` | Manager | `ChangeMe123!` |
 | `employee@example.com` | Employee | `ChangeMe123!` |
 
@@ -29,7 +29,8 @@ The demo accounts come with about a month of made-up attendance history, so that
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts the database, API (port 4000) and web app (port 5173) |
+| `npm start` | Starts the database, API (port 4000) and web app (port 5015), and opens the browser |
+| `npm run dev` | Same as `npm start` |
 | `npm test` | Runs the API tests in a separate `timesheet_test` database, leaving dev data alone |
 | `npm run typecheck` | Type-checks all three parts |
 | `npm run db:migrate` | Creates and applies a migration after editing `database/schema.prisma` |

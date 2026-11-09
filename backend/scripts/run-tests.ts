@@ -8,7 +8,7 @@ const env = {
   NODE_ENV: 'test',
   DATABASE_URL: urlFor('timesheet_test'),
   JWT_SECRET: 'test-secret-test-secret-test-secret-test-secret',
-  CLIENT_URL: 'http://localhost:5173',
+  CLIENT_URL: 'http://localhost:5015',
 };
 
 let failed = false;

@@ -10,6 +10,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 const password = process.env.SEED_PASSWORD;
 if (!password) throw new Error('SEED_PASSWORD is not set');
+const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+if (!adminPassword) throw new Error('SEED_ADMIN_PASSWORD is not set');
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
@@ -28,7 +30,17 @@ const upsertUser = (employeeCode: string, name: string, email: string, role: Rol
     create: { employeeCode, name, email, role, passwordHash, departmentId: department.id, shiftId: shift.id, managerId },
   });
 
-const admin = await upsertUser('EMP001', 'Demo Admin', 'admin@example.com', Role.ADMIN);
+// The admin has its own login. Keyed on the employee code, so an older admin account is renamed rather than duplicated.
+const adminEmail = 'admin@shimento.com';
+const adminPasswordHash = await bcrypt.hash(adminPassword, 12);
+const admin = await prisma.user.upsert({
+  where: { employeeCode: 'EMP001' },
+  update: { email: adminEmail, passwordHash: adminPasswordHash },
+  create: {
+    employeeCode: 'EMP001', name: 'Admin', email: adminEmail, role: Role.ADMIN,
+    passwordHash: adminPasswordHash, departmentId: department.id, shiftId: shift.id,
+  },
+});
 const manager = await upsertUser('EMP002', 'Demo Manager', 'manager@example.com', Role.MANAGER);
 const employee = await upsertUser('EMP003', 'Demo Employee', 'employee@example.com', Role.EMPLOYEE, manager.id);
 
@@ -76,5 +88,5 @@ await addHistory(admin, 2);
 await addHistory(manager, 9);
 await addHistory(employee, 0);
 
-console.log('Seeded demo accounts: admin@, manager@ and employee@example.com');
+console.log(`Seeded accounts: ${adminEmail}, manager@example.com and employee@example.com`);
 await prisma.$disconnect();

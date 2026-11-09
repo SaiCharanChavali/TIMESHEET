@@ -1,11 +1,12 @@
-import { Clock } from 'lucide-react';
-
-// The one place to swap in the company logo.
+// The ShimentoX logo, with the lettering recoloured navy so it shows on light backgrounds.
 export function Logo({ small }: { small?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-2 font-extrabold tracking-tight text-navy ${small ? 'text-base' : 'text-xl'}`}>
-      <Clock className="text-brand-500" size={small ? 20 : 26} strokeWidth={2.5} aria-hidden />
-      TimeSheet
-    </span>
+    <img
+      src="/shimentox-logo.png"
+      alt="ShimentoX"
+      width={960}
+      height={169}
+      className={`w-auto ${small ? 'h-5' : 'h-7'}`}
+    />
   );
 }

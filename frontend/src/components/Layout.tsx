@@ -13,12 +13,12 @@ function RailLink({ to, label, icon: Icon, end, badge }: { to: string; label: st
       to={to}
       end={end}
       className={({ isActive }) =>
-        `flex min-w-20 flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-sm font-medium ${
-          isActive ? 'bg-brand-50 text-brand-600' : 'text-slate-700 hover:bg-slate-100'
+        `group flex min-w-16 flex-col items-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium transition-colors duration-150 ${
+          isActive ? 'bg-brand-50 font-semibold text-brand-600' : 'text-slate-600 hover:bg-slate-100 hover:text-brand-600'
         }`}
     >
-      <span className="relative">
-        <Icon size={22} aria-hidden />
+      <span className="relative transition-transform duration-150 group-hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0">
+        <Icon size={18} strokeWidth={2} aria-hidden />
         {!!badge && (
           <span data-testid="approvals-badge" className="absolute -top-1.5 left-3.5 min-w-4 rounded-full bg-brand-600 px-1 text-center text-[11px] leading-4 font-semibold text-white">
             {badge > 99 ? '99+' : badge}
@@ -54,7 +54,7 @@ function UserMenu() {
   return (
     <div ref={ref} className="relative">
       <button aria-label="Account menu" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-3 rounded-lg p-1 text-left hover:bg-slate-50">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-navy font-semibold text-white" aria-hidden>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-navy font-semibold text-white" aria-hidden>
           {user.name.charAt(0).toUpperCase()}
         </span>
         <span className="hidden sm:block">
@@ -105,12 +105,12 @@ export function Layout() {
 
   return (
     <div className="flex h-dvh flex-col print:h-auto">
-      <header className="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-8">
+      <header className="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-1.5 sm:px-8">
         <Logo />
         <UserMenu />
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav aria-label="Main" className="no-scrollbar flex shrink-0 gap-1 overflow-auto border-b border-slate-200 bg-white p-2 md:w-28 md:flex-col md:border-r md:border-b-0">
+        <nav aria-label="Main" className="no-scrollbar flex shrink-0 gap-1 overflow-auto border-b border-slate-200 bg-white p-1.5 md:w-22 md:flex-col md:border-r md:border-b-0">
           <RailLink to="/" end label="Home" icon={Home} />
           <RailLink to="/timesheet" label="Timesheet" icon={ClipboardList} />
           <RailLink to="/requests" label="Requests" icon={FileClock} />
