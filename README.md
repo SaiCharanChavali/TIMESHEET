@@ -22,6 +22,7 @@ The app opens in your browser at http://localhost:5015. Press Ctrl+C in the term
 | `admin@shimento.com` | Admin | `Admin123` |
 | `manager@example.com` | Manager | `ChangeMe123!` |
 | `employee@example.com` | Employee | `ChangeMe123!` |
+| `hr@example.com` | HR | `ChangeMe123!` |
 
 The demo accounts come with about a month of made-up attendance history, so that timesheets have something to show.
 
@@ -35,6 +36,14 @@ The demo accounts come with about a month of made-up attendance history, so that
 | `npm run typecheck` | Type-checks all three parts |
 | `npm run db:migrate` | Creates and applies a migration after editing `database/schema.prisma` |
 | `npm run db:seed` | Adds the demo accounts and history again |
+
+## Background jobs and email
+
+The API runs background jobs itself, every `JOB_INTERVAL_SECONDS` (60 by default), so alerts go out whether or not anyone has the app open. Each job takes a lease in the `JobRun` table first, so running several API servers is safe, and a restart simply carries on from what's in the database.
+
+- **Forgotten check-outs:** once a shift has ended and the grace period has passed, the employee is reminded, then their manager and HR are told. Admins set the timings on the Check-outs page. Overnight shifts (an end time earlier than the start time) are supported.
+
+Notifications always appear in the app (the bell at the top). They're also emailed when `SMTP_HOST` and the other `SMTP_*` settings in `backend/.env` are filled in. Without them, each notification records that email wasn't sent, and in development the email is printed to the API log instead.
 
 ## Project layout
 

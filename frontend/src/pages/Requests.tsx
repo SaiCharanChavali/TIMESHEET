@@ -2,13 +2,23 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { CorrectionStatusBadge, type Correction, TimeRange } from '../components/attendance';
+import { AlertStatusBadge, ExplainDialog, notifyChanged, resolutionLabel, type AlertList, type CheckoutAlert } from '../components/checkouts';
 import { Alert, DataTable, RowAction } from '../components/ui';
-import { formatDay } from '../lib/time';
+import { formatDay, formatTime } from '../lib/time';
 
 export function Requests() {
   const [corrections, setCorrections] = useState<Correction[] | null>(null);
   const [timeZone, setTimeZone] = useState('');
   const [error, setError] = useState('');
+  const [alerts, setAlerts] = useState<AlertList | null>(null);
+  const [alertsError, setAlertsError] = useState('');
+  const [explaining, setExplaining] = useState<CheckoutAlert | null>(null);
+
+  const loadAlerts = useCallback(() => {
+    api<AlertList>('/forgotten-checkouts/mine').then(setAlerts).catch((err: Error) => setAlertsError(err.message));
+  }, []);
+
+  useEffect(loadAlerts, [loadAlerts]);
 
   const load = useCallback(async () => {
     const res = await api<{ timeZone: string; corrections: Correction[] }>('/corrections/mine');
@@ -64,6 +74,44 @@ export function Requests() {
           </DataTable>
         )}
       </div>
+
+      <h2 className="mt-10 text-lg font-bold">Missed check-outs</h2>
+      <p className="mt-1 text-sm text-slate-600">Days you were reminded to check out after your shift ended.</p>
+      <div className="mt-4 space-y-4">
+        {alertsError && <Alert>{alertsError}</Alert>}
+        {!alertsError && !alerts && <p className="text-sm text-slate-600">Loading…</p>}
+        {alerts?.alerts.length === 0 && <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">You haven't missed a check-out.</p>}
+        {!!alerts?.alerts.length && (
+          <DataTable headers={['Date', 'Shift ended', 'Reminders', 'Status', 'Your explanation', 'Actions']}>
+            {alerts.alerts.map((a) => (
+              <tr key={a.id}>
+                <td className="font-medium whitespace-nowrap">{formatDay(a.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                <td className="whitespace-nowrap">{formatTime(a.scheduledEndAt, alerts.timeZone)}</td>
+                <td className="tabular-nums">{a.alertCount}</td>
+                <td>
+                  <AlertStatusBadge status={a.status} />
+                  {a.resolution && <span className="block text-xs text-slate-500">{resolutionLabel[a.resolution]}</span>}
+                </td>
+                <td className="max-w-64">{a.explanation ?? '—'}</td>
+                <td>{a.canExplain ? <RowAction onClick={() => setExplaining(a)}>I already left</RowAction> : '—'}</td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </div>
+
+      {explaining && (
+        <ExplainDialog
+          alert={explaining}
+          onClose={() => setExplaining(null)}
+          onDone={() => {
+            setExplaining(null);
+            notifyChanged();
+            loadAlerts();
+            load().catch((err: Error) => setError(err.message));
+          }}
+        />
+      )}
     </>
   );
 }

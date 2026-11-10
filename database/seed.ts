@@ -43,6 +43,7 @@ const admin = await prisma.user.upsert({
 });
 const manager = await upsertUser('EMP002', 'Demo Manager', 'manager@example.com', Role.MANAGER);
 const employee = await upsertUser('EMP003', 'Demo Employee', 'employee@example.com', Role.EMPLOYEE, manager.id);
+await upsertUser('EMP004', 'Demo HR', 'hr@example.com', Role.HR);
 
 // About a month of varied history, so that timesheets and reports have something to show.
 const HISTORY_DAYS = 30;
@@ -88,5 +89,5 @@ await addHistory(admin, 2);
 await addHistory(manager, 9);
 await addHistory(employee, 0);
 
-console.log(`Seeded accounts: ${adminEmail}, manager@example.com and employee@example.com`);
+console.log(`Seeded accounts: ${adminEmail}, manager@example.com, employee@example.com and hr@example.com`);
 await prisma.$disconnect();

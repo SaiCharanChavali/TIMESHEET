@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { AlertStatusBadge, eventLabel, notifyChanged, resolutionLabel, type AlertList, type CheckoutAlert } from '../components/checkouts';
 import { ReasonDialog } from '../components/ReasonDialog';
-import { Alert, DataTable, Modal, RowAction, SecondaryButton, Select } from '../components/ui';
+import { Alert, DataTable, Modal, RowAction, SecondaryButton } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime, formatDay, formatDuration, formatShiftTime, formatTime } from '../lib/time';
 
@@ -33,6 +33,8 @@ function History({ alert, timeZone, onClose }: { alert: CheckoutAlert; timeZone:
 export function Checkouts() {
   const { user } = useAuth();
   const [status, setStatus] = useState<StatusFilter>('open');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [data, setData] = useState<AlertList | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -44,8 +46,9 @@ export function Checkouts() {
   const canSeeSettings = user?.role === 'ADMIN' || user?.role === 'HR';
 
   const load = useCallback(async () => {
-    setData(await api<AlertList>(`/forgotten-checkouts?status=${status}`));
-  }, [status]);
+    const params = new URLSearchParams({ status, ...(from ? { from } : {}), ...(to ? { to } : {}) });
+    setData(await api<AlertList>(`/forgotten-checkouts?${params}`));
+  }, [status, from, to]);
 
   useEffect(() => {
     setData(null);
@@ -68,26 +71,38 @@ export function Checkouts() {
     setBusy(false);
   };
 
+  const tabClass = (value: StatusFilter) =>
+    `flex items-center rounded-md px-3 text-sm font-medium ${status === value ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`;
+  // Same height, border and radius as the status tabs, so the whole filter row lines up.
+  const dateClass = 'h-10 w-40 rounded-lg border border-slate-300 bg-white px-3 text-sm text-navy outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20';
+
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Missing check-outs</h1>
-          <p className="mt-1 text-slate-600">People whose shift ended without a check-out. All times are in India time.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Missing check-outs</h1>
         {canSeeSettings && (
-          <Link to="/checkouts/settings" className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <Link to="/checkouts/settings" className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <Settings size={16} aria-hidden /> Alert settings
           </Link>
         )}
       </div>
+      <p className="mt-1 text-slate-600">People whose shift ended without a check-out. All times are in India time.</p>
 
-      <div className="mt-6 max-w-48">
-        <Select label="Show" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-          <option value="open">Open</option>
-          <option value="resolved">Resolved</option>
-          <option value="all">All</option>
-        </Select>
+      <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div role="group" aria-label="Status" className="flex h-10 rounded-lg border border-slate-300 bg-white p-0.5">
+          <button type="button" className={tabClass('open')} aria-pressed={status === 'open'} onClick={() => setStatus('open')}>Open</button>
+          <button type="button" className={tabClass('resolved')} aria-pressed={status === 'resolved'} onClick={() => setStatus('resolved')}>Resolved</button>
+          <button type="button" className={tabClass('all')} aria-pressed={status === 'all'} onClick={() => setStatus('all')}>All</button>
+        </div>
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          From
+          <input type="date" className={dateClass} value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          To
+          <input type="date" className={dateClass} value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        {(from || to) && <RowAction onClick={() => { setFrom(''); setTo(''); }}>Clear dates</RowAction>}
       </div>
 
       <div className="mt-4 space-y-4">
@@ -96,7 +111,7 @@ export function Checkouts() {
         {!error && !data && <p className="text-sm text-slate-600">Loading…</p>}
         {data && !data.alerts.length && (
           <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            {status === 'open' ? 'Everyone has checked out. Nothing needs attention.' : 'No missing check-outs found.'}
+            {status === 'open' && !from && !to ? 'Everyone has checked out. Nothing needs attention.' : 'No missing check-outs match these filters.'}
           </p>
         )}
 

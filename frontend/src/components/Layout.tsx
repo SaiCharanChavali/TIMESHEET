@@ -14,7 +14,7 @@ function RailLink({ to, label, icon: Icon, end, badge }: { to: string; label: st
       to={to}
       end={end}
       className={({ isActive }) =>
-        `group flex min-w-16 flex-col items-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium transition-colors duration-150 ${
+        `group flex min-w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
           isActive ? 'bg-brand-50 font-semibold text-brand-600' : 'text-slate-600 hover:bg-slate-100 hover:text-brand-600'
         }`}
     >
@@ -131,12 +131,16 @@ export function Layout() {
               <RailLink to="/holidays" label="Holidays" icon={CalendarDays} />
             </>
           )}
+          {/* On wider screens the logo sits at the foot of the sidebar, clear of the page content. */}
+          <div className="mt-auto hidden justify-center border-t border-slate-100 px-1 pt-3 pb-1.5 md:flex">
+            <Logo rail />
+          </div>
         </nav>
         <div ref={scroller} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto print:overflow-visible">
-          <main className="w-full max-w-7xl flex-1 px-4 py-6 sm:py-8 xl:px-10">
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8 xl:px-10">
             <Outlet />
           </main>
-          <footer className="border-t border-slate-200 px-4 py-4 xl:px-10">
+          <footer className="border-t border-slate-200 px-4 py-4 md:hidden">
             <Logo small />
           </footer>
         </div>
