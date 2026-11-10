@@ -115,4 +115,4 @@ export function AuthCard({ title, subtitle, children }: { title: string; subtitl
   );
 }
 
-export const roleLabel = { EMPLOYEE: 'Employee', MANAGER: 'Manager', ADMIN: 'Admin' } as const;
+export const roleLabel = { EMPLOYEE: 'Employee', MANAGER: 'Manager', HR: 'HR', ADMIN: 'Admin' } as const;

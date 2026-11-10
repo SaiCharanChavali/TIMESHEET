@@ -142,7 +142,8 @@ export function Timesheet() {
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh((n) => n + 1), []);
 
-  const canViewOthers = user?.role !== 'EMPLOYEE';
+  // HR only reviews check-out alerts, so like employees they see just their own timesheet.
+  const canViewOthers = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
   useEffect(() => {
     if (!canViewOthers) return;

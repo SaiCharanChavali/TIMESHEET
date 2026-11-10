@@ -34,3 +34,7 @@ export function addDays(day: string, amount: number) {
 // A moment as "HH:mm" at the office, the form that shift and correction times are sent in.
 export const toOfficeTime = (iso: string, timeZone: string) =>
   new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(new Date(iso));
+
+// A moment with its date, such as "4 Nov, 6:15 pm", at the office.
+export const formatDateTime = (iso: string | null | undefined, timeZone: string) =>
+  iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone }).format(new Date(iso)) : '—';

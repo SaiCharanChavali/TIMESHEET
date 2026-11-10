@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { DayTable, StatusBadge, TeamToday, type AttendanceDay, type DayRecord } from '../components/attendance';
+import { MyCheckoutAlerts, NOTIFICATIONS_CHANGED, notifyChanged, type AlertList } from '../components/checkouts';
 import { Alert, Button, SecondaryButton } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { formatDay, formatDuration, formatShiftTime, formatTime } from '../lib/time';
@@ -144,8 +145,9 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
 
 export function Dashboard() {
   const { user } = useAuth();
-  const isReviewer = !!user && user.role !== 'EMPLOYEE';
+  const isReviewer = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [today, setToday] = useState<Today | null>(null);
+  const [myAlerts, setMyAlerts] = useState<AlertList | null>(null);
   const [recent, setRecent] = useState<AttendanceDay[] | null>(null);
   const [error, setError] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState(0);
@@ -155,20 +157,32 @@ export function Dashboard() {
     [],
   );
 
+  const loadAlerts = useCallback(() => {
+    api<AlertList>('/forgotten-checkouts/mine').then(setMyAlerts).catch(() => {});
+  }, []);
+
   const load = useCallback(() => {
     api<Today>('/attendance/today').then(setToday).catch((err: Error) => setError(err.message));
     loadRecent().catch((err: Error) => setError(err.message));
+    loadAlerts();
     if (isReviewer) api<{ count: number }>('/approvals').then((res) => setPendingApprovals(res.count)).catch(() => {});
-  }, [loadRecent, isReviewer]);
+  }, [loadRecent, loadAlerts, isReviewer]);
 
   // Returning to the tab refreshes it, in case it was left open overnight or used elsewhere.
   useEffect(() => {
     load();
     window.addEventListener('focus', load);
-    return () => window.removeEventListener('focus', load);
-  }, [load]);
+    window.addEventListener(NOTIFICATIONS_CHANGED, loadAlerts);
+    return () => {
+      window.removeEventListener('focus', load);
+      window.removeEventListener(NOTIFICATIONS_CHANGED, loadAlerts);
+    };
+  }, [load, loadAlerts]);
 
   if (!user) return null;
+  // The older banner is hidden for a day that already has an alert above, so the same day isn't raised twice.
+  const alertDays = new Set(myAlerts?.alerts.filter((a) => a.status !== 'RESOLVED').map((a) => a.date));
+  const openDay = today?.record && !today.record.checkOutAt ? today.record.date : undefined;
 
   return (
     <>
@@ -183,7 +197,8 @@ export function Dashboard() {
             <Link to="/approvals" className="font-semibold underline">Review now</Link>
           </p>
         )}
-        {today?.missedCheckOutDate && (
+        {myAlerts && <MyCheckoutAlerts data={myAlerts} openDay={openDay} onChange={load} />}
+        {today?.missedCheckOutDate && !alertDays.has(today.missedCheckOutDate) && (
           <Alert>
             You didn't check out on {formatDay(today.missedCheckOutDate, { day: 'numeric', month: 'long' })}, so that day's hours
             haven't been counted.{' '}
@@ -197,12 +212,15 @@ export function Dashboard() {
             onChange={(updated) => {
               setToday(updated);
               loadRecent().catch((err: Error) => setError(err.message));
+              // Checking out resolves any alert for the day.
+              loadAlerts();
+              notifyChanged();
             }}
           />
         )}
       </div>
 
-      {user.role !== 'EMPLOYEE' && <TeamToday />}
+      {isReviewer && <TeamToday />}
 
       {today && recent && (
         <section className="mt-8">

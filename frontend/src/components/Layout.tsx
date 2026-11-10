@@ -1,10 +1,11 @@
-import { Building2, CalendarDays, CheckSquare, ChevronDown, ClipboardList, Clock3, FileClock, Home, LogOut, UserCheck, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { AlarmClock, Building2, CalendarDays, CheckSquare, ChevronDown, ClipboardList, Clock3, FileClock, Home, LogOut, UserCheck, UserRound, Users, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { APPROVALS_CHANGED } from './attendance';
 import { Logo } from './Logo';
+import { NotificationBell } from './NotificationBell';
 import { roleLabel } from './ui';
 
 function RailLink({ to, label, icon: Icon, end, badge }: { to: string; label: string; icon: LucideIcon; end?: boolean; badge?: number }) {
@@ -82,7 +83,9 @@ export function Layout() {
   const { pathname } = useLocation();
   const scroller = useRef<HTMLDivElement>(null);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const isReviewer = !!user && user.role !== 'EMPLOYEE';
+  // HR handles check-out escalations only. Approvals, attendance and people stay with managers and admins.
+  const isReviewer = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const seesCheckouts = isReviewer || user?.role === 'HR';
 
   useEffect(() => {
     if (!isReviewer) return;
@@ -107,16 +110,20 @@ export function Layout() {
     <div className="flex h-dvh flex-col print:h-auto">
       <header className="z-10 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-1.5 sm:px-8">
         <Logo />
-        <UserMenu />
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <UserMenu />
+        </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav aria-label="Main" className="no-scrollbar flex shrink-0 gap-1 overflow-auto border-b border-slate-200 bg-white p-1.5 md:w-22 md:flex-col md:border-r md:border-b-0">
           <RailLink to="/" end label="Home" icon={Home} />
           <RailLink to="/timesheet" label="Timesheet" icon={ClipboardList} />
           <RailLink to="/requests" label="Requests" icon={FileClock} />
-          {user.role !== 'EMPLOYEE' && <RailLink to="/attendance" label="Attendance" icon={UserCheck} />}
-          {user.role !== 'EMPLOYEE' && <RailLink to="/approvals" label="Approvals" icon={CheckSquare} badge={pendingApprovals} />}
-          {user.role !== 'EMPLOYEE' && <RailLink to="/people" label={user.role === 'ADMIN' ? 'People' : 'My team'} icon={Users} />}
+          {isReviewer && <RailLink to="/attendance" label="Attendance" icon={UserCheck} />}
+          {isReviewer && <RailLink to="/approvals" label="Approvals" icon={CheckSquare} badge={pendingApprovals} />}
+          {seesCheckouts && <RailLink to="/checkouts" label={'Check‑outs'} icon={AlarmClock} />}
+          {isReviewer && <RailLink to="/people" label={user.role === 'ADMIN' ? 'People' : 'My team'} icon={Users} />}
           {user.role === 'ADMIN' && (
             <>
               <RailLink to="/departments" label="Departments" icon={Building2} />

@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   EMPLOYEE
   MANAGER
+  HR
   ADMIN
 }
 
@@ -36,19 +37,19 @@ model Shift {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  employeeCode String   @unique
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(EMPLOYEE)
-  active       Boolean  @default(true)
+  id                 String   @id @default(uuid())
+  employeeCode       String   @unique
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(EMPLOYEE)
+  active             Boolean  @default(true)
   // Incremented on password change so that older login cookies stop working.
-  tokenVersion Int      @default(0)
+  tokenVersion       Int      @default(0)
   // Set when an admin issues a temporary password; the user must replace it before doing anything else.
-  mustChangePassword Boolean @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
@@ -60,10 +61,14 @@ model User {
 
   passwordResetTokens PasswordResetToken[]
   attendance          Attendance[]
-  corrections         CorrectionRequest[] @relation("CorrectionSubject")
-  correctionsReviewed CorrectionRequest[] @relation("CorrectionReviewer")
-  timesheets          Timesheet[]         @relation("TimesheetSubject")
-  timesheetsReviewed  Timesheet[]         @relation("TimesheetReviewer")
+  corrections         CorrectionRequest[]         @relation("CorrectionSubject")
+  correctionsReviewed CorrectionRequest[]         @relation("CorrectionReviewer")
+  timesheets          Timesheet[]                 @relation("TimesheetSubject")
+  timesheetsReviewed  Timesheet[]                 @relation("TimesheetReviewer")
+  notifications       Notification[]
+  checkoutAlerts      ForgottenCheckoutAlert[]
+  checkoutEvents      ForgottenCheckoutEvent[]    @relation("CheckoutEventActor")
+  checkoutSettings    ForgottenCheckoutSettings[] @relation("CheckoutSettingsUpdatedBy")
 
   @@index([managerId])
 }
@@ -124,9 +129,10 @@ model Attendance {
   // Set when an approved correction has changed this day.
   correctedAt       DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  breaks    Break[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  breaks        Break[]
+  checkoutAlert ForgottenCheckoutAlert?
 
   @@unique([userId, date])
   @@index([date])
@@ -203,4 +209,142 @@ model Timesheet {
 
   @@unique([userId, periodStart])
   @@index([status])
+}
+
+enum NotificationType {
+  FORGOTTEN_CHECKOUT
+  FORGOTTEN_CHECKOUT_ESCALATION
+  FORGOTTEN_CHECKOUT_EXPLANATION
+}
+
+enum EmailStatus {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  NOT_CONFIGURED
+  FAILED
+}
+
+// In-app notifications. Those that also go by email record how delivery went.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  // Unique, so that a job running twice can never send the same notification twice.
+  dedupeKey String           @unique
+  readAt    DateTime?
+
+  emailStatus   EmailStatus @default(NOT_REQUESTED)
+  emailAttempts Int         @default(0)
+  emailError    String?
+  createdAt     DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@index([emailStatus])
+}
+
+enum ForgottenCheckoutStatus {
+  AWAITING_CHECKOUT
+  REMINDER_SENT
+  ESCALATED
+  REQUIRES_HR_REVIEW
+  RESOLVED
+}
+
+enum ForgottenCheckoutResolution {
+  CHECKED_OUT
+  CORRECTED
+  CLOSED
+}
+
+enum ForgottenCheckoutEventType {
+  CREATED
+  REMINDER
+  MANAGER_NOTIFIED
+  HR_NOTIFIED
+  MANUAL_REMINDER
+  ESCALATED_TO_HR
+  EXPLANATION
+  RESOLVED
+}
+
+// A single row (id 1) holding the organisation's forgotten check-out rules.
+model ForgottenCheckoutSettings {
+  id                      Int     @id @default(1)
+  enabled                 Boolean @default(true)
+  // Minutes after the shift ends before the first alert.
+  alertAfterMinutes       Int     @default(15)
+  repeatReminders         Boolean @default(true)
+  reminderIntervalMinutes Int     @default(15)
+  maxReminders            Int     @default(3)
+  notifyEmployee          Boolean @default(true)
+  notifyManager           Boolean @default(true)
+  // Counted from the shift end, like alertAfterMinutes.
+  managerAfterMinutes     Int     @default(60)
+  notifyHr                Boolean @default(true)
+  hrAfterMinutes          Int     @default(240)
+  sendEmail               Boolean @default(true)
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("CheckoutSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// One per attendance day that passed its shift end without a check-out.
+model ForgottenCheckoutAlert {
+  id             String     @id @default(uuid())
+  attendanceId   String     @unique
+  attendance     Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date           DateTime   @db.Date
+  scheduledEndAt DateTime
+
+  status            ForgottenCheckoutStatus @default(AWAITING_CHECKOUT)
+  alertCount        Int                     @default(0)
+  lastAlertAt       DateTime?
+  managerNotifiedAt DateTime?
+  hrNotifiedAt      DateTime?
+
+  explanation String?
+  explainedAt DateTime?
+
+  resolution ForgottenCheckoutResolution?
+  resolvedAt DateTime?
+
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+  events    ForgottenCheckoutEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([date])
+}
+
+// The history of an alert: what was sent, who acted and why.
+model ForgottenCheckoutEvent {
+  id        String                     @id @default(uuid())
+  alertId   String
+  alert     ForgottenCheckoutAlert     @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  type      ForgottenCheckoutEventType
+  actorId   String?
+  actor     User?                      @relation("CheckoutEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  note      String?
+  createdAt DateTime                   @default(now())
+
+  @@index([alertId])
+}
+
+// Lease and last result for each background job, so only one server runs a job at a time.
+model JobRun {
+  name           String    @id
+  lockedUntil    DateTime?
+  lastStartedAt  DateTime?
+  lastFinishedAt DateTime?
+  lastError      String?
+  lastSummary    Json?
 }

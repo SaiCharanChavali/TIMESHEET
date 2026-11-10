@@ -6,6 +6,8 @@ import { useAuth } from './hooks/useAuth';
 import { Account } from './pages/Account';
 import { Approvals } from './pages/Approvals';
 import { Attendance } from './pages/Attendance';
+import { Checkouts } from './pages/Checkouts';
+import { CheckoutSettings } from './pages/CheckoutSettings';
 import { Dashboard } from './pages/Dashboard';
 import { Departments } from './pages/Departments';
 import { ForcedPasswordChange } from './pages/ForcedPasswordChange';
@@ -50,6 +52,12 @@ export function App() {
             <Route path="attendance" element={<Attendance />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="people" element={<People />} />
+          </Route>
+          <Route element={<RequireRole roles={['ADMIN', 'MANAGER', 'HR']} />}>
+            <Route path="checkouts" element={<Checkouts />} />
+          </Route>
+          <Route element={<RequireRole roles={['ADMIN', 'HR']} />}>
+            <Route path="checkouts/settings" element={<CheckoutSettings />} />
           </Route>
           <Route element={<RequireRole roles={['ADMIN']} />}>
             <Route path="departments" element={<Departments />} />
