@@ -7,9 +7,64 @@ import { CorrectionDialog } from '../components/CorrectionDialog';
 import { ReasonDialog } from '../components/ReasonDialog';
 import { Alert, Button, RowAction, SecondaryButton, Select } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
-import { addDays, formatDay, formatDuration, formatTime } from '../lib/time';
+import { addDays, formatDay, formatDuration, formatShiftTime, formatTime } from '../lib/time';
 
 type View = 'day' | 'week' | 'month';
+
+function TaskEntries({ entries, date, timeZone, canEdit, onSaved }: {
+  entries: { slotStartAt: string; task: string }[];
+  date: string;
+  timeZone: string;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const [tasks, setTasks] = useState(entries);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState<string | null>(null);
+  useEffect(() => setTasks(entries), [entries]);
+
+  if (!entries.length) return null;
+  const save = async (entry: { slotStartAt: string; task: string }) => {
+    setSaving(entry.slotStartAt);
+    setError('');
+    try {
+      await api('/attendance/task-entry', { date, slotStartAt: entry.slotStartAt, task: entry.task }, 'PUT');
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+      <h2 className="font-semibold">Hourly tasks</h2>
+      {error && <div className="mt-2"><Alert>{error}</Alert></div>}
+      <div className="mt-3 space-y-3">
+        {tasks.map((entry) => {
+          const start = new Date(entry.slotStartAt);
+          const end = new Date(start.getTime() + 60 * 60 * 1000).toISOString();
+          return (
+            <div key={entry.slotStartAt} className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <label className="block text-sm font-medium text-slate-700">
+                {formatTime(entry.slotStartAt, timeZone)}–{formatTime(end, timeZone)}
+                <input
+                  value={entry.task}
+                  disabled={!canEdit || saving === entry.slotStartAt}
+                  maxLength={200}
+                  onChange={(e) => setTasks((current) => current.map((item) => item.slotStartAt === entry.slotStartAt ? { ...item, task: e.target.value } : item))}
+                  className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal text-navy outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20 disabled:bg-slate-50"
+                />
+              </label>
+              {canEdit && <SecondaryButton disabled={saving === entry.slotStartAt || !entry.task.trim()} onClick={() => save(entry)}>{saving === entry.slotStartAt ? 'Saving…' : 'Save'}</SecondaryButton>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 interface TimesheetData {
   timeZone: string;
@@ -260,16 +315,25 @@ export function Timesheet() {
                 } : undefined}
               />
             )}
-            {view === 'day' && !!data.days[0]?.record?.breaks.length && (
+            {view === 'day' && !!data.days[0]?.record && ((data.days[0].record?.breaks.length ?? 0) > 0 || (data.days[0].record?.breakMinutes ?? 0) > 0) && (
               <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm">
                 <h2 className="font-semibold">Breaks</h2>
-                <ul className="mt-1 text-slate-700">
+                {data.days[0].record?.breaks.length ? <ul className="mt-1 text-slate-700">
                   {data.days[0].record.breaks.map((b) => (
                     <li key={b.startAt}>{formatTime(b.startAt, data.timeZone)} to {b.endAt ? formatTime(b.endAt, data.timeZone) : 'now'}</li>
                   ))}
-                </ul>
+                </ul> : <p className="mt-1 text-slate-700">Automatic deduction: {formatDuration(data.days[0].record?.breakMinutes ?? 0)}{data.days[0].record?.breakStartTime ? ` (planned around ${formatShiftTime(data.days[0].record.breakStartTime)})` : ''}.</p>}
               </section>
             )}
+            {view === 'day' && data.days[0]?.record?.taskEntries.length ? (
+              <TaskEntries
+                entries={data.days[0].record.taskEntries}
+                date={data.days[0].date}
+                timeZone={data.timeZone}
+                canEdit={viewingSelf && !data.days[0].locked}
+                onSaved={reload}
+              />
+            ) : null}
           </>
         )}
       </div>

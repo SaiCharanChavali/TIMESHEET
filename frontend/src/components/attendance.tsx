@@ -15,11 +15,15 @@ export interface DayRecord {
   lateMinutes: number;
   workedMinutes: number | null;
   breakMinutes: number | null;
+  breakStartTime: string | null;
+  breakRuleMinutes: number;
+  breakAfterMinutes: number;
   earlyLeaveMinutes: number | null;
   overtimeMinutes: number | null;
   status: string | null;
   correctedAt: string | null;
   breaks: { startAt: string; endAt: string | null }[];
+  taskEntries: { slotStartAt: string; task: string }[];
 }
 
 export interface AttendanceDay {

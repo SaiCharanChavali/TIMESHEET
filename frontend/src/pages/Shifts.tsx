@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 import { TimeField } from '../components/TimeField';
 import { Alert, Button, DataTable, Field, Modal, RowAction, SecondaryButton } from '../components/ui';
 import { formatShiftTime } from '../lib/time';
@@ -13,6 +14,9 @@ interface Shift {
   fullDayMinutes: number;
   halfDayMinutes: number;
   overtimeAfterMins: number;
+  breakStartTime: string | null;
+  breakMinutes: number;
+  breakAfterMinutes: number;
   weeklyOffDays: number[];
   _count: { users: number };
 }
@@ -22,7 +26,7 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const toHours = (minutes: number) => String(minutes / 60);
 const toMinutes = (hours: string) => Math.round(Number(hours) * 60);
 
-function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: () => void; onSaved: () => void }) {
+function ShiftForm({ shift, breakOnly = false, onClose, onSaved }: { shift: Shift | null; breakOnly?: boolean; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(shift?.name ?? '');
   const [startTime, setStartTime] = useState(shift?.startTime ?? '09:00');
   const [endTime, setEndTime] = useState(shift?.endTime ?? '18:00');
@@ -31,6 +35,9 @@ function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: 
   const [halfDay, setHalfDay] = useState(toHours(shift?.halfDayMinutes ?? 240));
   const [overtime, setOvertime] = useState(toHours(shift?.overtimeAfterMins ?? 540));
   const [weeklyOffDays, setWeeklyOffDays] = useState(shift?.weeklyOffDays ?? [0, 6]);
+  const [breakStartTime, setBreakStartTime] = useState(shift?.breakStartTime ?? '');
+  const [breakMinutes, setBreakMinutes] = useState(String(shift?.breakMinutes ?? 0));
+  const [breakAfterMinutes, setBreakAfterMinutes] = useState(String(shift?.breakAfterMinutes ?? 0));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,15 +48,18 @@ function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: 
     e.preventDefault();
     setError('');
     setSubmitting(true);
+    const breakFields = { breakStartTime: breakStartTime || null, breakMinutes: Number(breakMinutes), breakAfterMinutes: Number(breakAfterMinutes) };
     const body = {
       name, startTime, endTime, weeklyOffDays,
       graceMinutes: Number(graceMinutes),
       fullDayMinutes: toMinutes(fullDay),
       halfDayMinutes: toMinutes(halfDay),
       overtimeAfterMins: toMinutes(overtime),
+      ...breakFields,
     };
     try {
-      if (shift) await api(`/shifts/${shift.id}`, body, 'PUT');
+      if (breakOnly && shift) await api(`/shifts/${shift.id}/break-policy`, breakFields, 'PUT');
+      else if (shift) await api(`/shifts/${shift.id}`, body, 'PUT');
       else await api('/shifts', body);
       onSaved();
     } catch (err) {
@@ -59,9 +69,10 @@ function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: 
   };
 
   return (
-    <Modal title={shift ? `Edit ${shift.name}` : 'Add shift'} onClose={onClose}>
+    <Modal title={breakOnly ? `Break policy: ${shift?.name}` : shift ? `Edit ${shift.name}` : 'Add shift'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
+        {!breakOnly && <>
         <Field label="Shift name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
         <div className="grid gap-4 sm:grid-cols-2">
           <TimeField label="Start time" value={startTime} onChange={setStartTime} />
@@ -84,6 +95,16 @@ function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: 
             ))}
           </div>
         </fieldset>
+        </>}
+        <fieldset className="space-y-4 rounded-xl border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-700">Automatic break deduction</legend>
+          <p className="text-xs text-slate-500">The planned start time is informational. The configured duration is deducted after the attendance threshold is reached.</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Planned start time" type="time" value={breakStartTime} onChange={(e) => setBreakStartTime(e.target.value)} />
+            <Field label="Deduct (minutes)" type="number" min={0} max={1440} step={1} required value={breakMinutes} onChange={(e) => setBreakMinutes(e.target.value)} />
+            <Field label="After attendance (minutes)" type="number" min={0} max={1440} step={1} required value={breakAfterMinutes} onChange={(e) => setBreakAfterMinutes(e.target.value)} />
+          </div>
+        </fieldset>
         <div className="flex justify-end gap-2 pt-2">
           <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
           <Button type="submit" disabled={submitting}>{submitting ? 'Saving…' : 'Save'}</Button>
@@ -94,6 +115,8 @@ function ShiftForm({ shift, onClose, onSaved }: { shift: Shift | null; onClose: 
 }
 
 export function Shifts() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [shifts, setShifts] = useState<Shift[] | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<Shift | 'new' | null>(null);
@@ -119,28 +142,33 @@ export function Shifts() {
     <>
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-3xl font-bold tracking-tight">Shifts</h1>
-        <Button onClick={() => setEditing('new')}>Add shift</Button>
+        {isAdmin && <Button onClick={() => setEditing('new')}>Add shift</Button>}
       </div>
       <div className="mt-4 space-y-4">
         {error && <Alert>{error}</Alert>}
         {!error && !shifts && <p className="text-sm text-slate-600">Loading…</p>}
         {shifts?.length === 0 && <p className="text-sm text-slate-600">No shifts yet.</p>}
         {!!shifts?.length && (
-          <DataTable headers={['Name', 'Hours', 'Grace', 'Full day', 'Half day', 'Overtime after', 'Weekly off', 'Employees', 'Actions']}>
+          <DataTable headers={['Name', 'Hours', ...(isAdmin ? ['Grace', 'Full day', 'Half day', 'Overtime after', 'Weekly off'] : []), 'Break policy', 'Employees', 'Actions']}>
             {shifts.map((s) => (
               <tr key={s.id}>
                 <td className="font-medium whitespace-nowrap">{s.name}</td>
                 <td>{formatShiftTime(s.startTime)} – {formatShiftTime(s.endTime)}</td>
-                <td className="whitespace-nowrap">{s.graceMinutes} min</td>
-                <td className="whitespace-nowrap">{toHours(s.fullDayMinutes)} h</td>
-                <td className="whitespace-nowrap">{toHours(s.halfDayMinutes)} h</td>
-                <td className="whitespace-nowrap">{toHours(s.overtimeAfterMins)} h</td>
-                <td>{s.weeklyOffDays.map((d) => DAYS[d]).join(', ') || 'None'}</td>
+                {isAdmin && <>
+                  <td className="whitespace-nowrap">{s.graceMinutes} min</td>
+                  <td className="whitespace-nowrap">{toHours(s.fullDayMinutes)} h</td>
+                  <td className="whitespace-nowrap">{toHours(s.halfDayMinutes)} h</td>
+                  <td className="whitespace-nowrap">{toHours(s.overtimeAfterMins)} h</td>
+                  <td>{s.weeklyOffDays.map((d) => DAYS[d]).join(', ') || 'None'}</td>
+                </>}
+                <td className="min-w-40">{s.breakMinutes ? `${s.breakMinutes} min after ${s.breakAfterMinutes} min` : 'No deduction'}{s.breakStartTime && <span className="block text-xs text-slate-500">Planned {formatShiftTime(s.breakStartTime)}</span>}</td>
                 <td>{s._count.users}</td>
                 <td>
                   <div className="flex gap-3">
-                    <RowAction onClick={() => setEditing(s)}>Edit</RowAction>
-                    <RowAction danger onClick={() => remove(s)}>Delete</RowAction>
+                    {isAdmin ? <>
+                      <RowAction onClick={() => setEditing(s)}>Edit</RowAction>
+                      <RowAction danger onClick={() => remove(s)}>Delete</RowAction>
+                    </> : <RowAction onClick={() => setEditing(s)}>Break policy</RowAction>}
                   </div>
                 </td>
               </tr>
@@ -151,6 +179,7 @@ export function Shifts() {
       {editing && (
         <ShiftForm
           shift={editing === 'new' ? null : editing}
+          breakOnly={!isAdmin}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);

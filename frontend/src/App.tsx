@@ -61,8 +61,10 @@ export function App() {
           </Route>
           <Route element={<RequireRole roles={['ADMIN']} />}>
             <Route path="departments" element={<Departments />} />
-            <Route path="shifts" element={<Shifts />} />
             <Route path="holidays" element={<Holidays />} />
+          </Route>
+          <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
+            <Route path="shifts" element={<Shifts />} />
           </Route>
         </Route>
       </Route>

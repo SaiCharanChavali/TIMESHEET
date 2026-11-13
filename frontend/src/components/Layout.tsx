@@ -124,10 +124,10 @@ export function Layout() {
           {isReviewer && <RailLink to="/approvals" label="Approvals" icon={CheckSquare} badge={pendingApprovals} />}
           {seesCheckouts && <RailLink to="/checkouts" label={'Check‑outs'} icon={AlarmClock} />}
           {isReviewer && <RailLink to="/people" label={user.role === 'ADMIN' ? 'People' : 'My team'} icon={Users} />}
+          {isReviewer && <RailLink to="/shifts" label={user.role === 'ADMIN' ? 'Shifts' : 'Break rules'} icon={Clock3} />}
           {user.role === 'ADMIN' && (
             <>
               <RailLink to="/departments" label="Departments" icon={Building2} />
-              <RailLink to="/shifts" label="Shifts" icon={Clock3} />
               <RailLink to="/holidays" label="Holidays" icon={CalendarDays} />
             </>
           )}

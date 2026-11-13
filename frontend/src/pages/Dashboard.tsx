@@ -1,10 +1,10 @@
-import { Coffee, LogIn, LogOut, Play } from 'lucide-react';
+import { LogIn, LogOut } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { DayTable, StatusBadge, TeamToday, type AttendanceDay, type DayRecord } from '../components/attendance';
 import { MyCheckoutAlerts, NOTIFICATIONS_CHANGED, notifyChanged, type AlertList } from '../components/checkouts';
-import { Alert, Button, SecondaryButton } from '../components/ui';
+import { Alert, Button, Field, SecondaryButton } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { formatDay, formatDuration, formatShiftTime, formatTime } from '../lib/time';
 
@@ -12,11 +12,12 @@ interface Today {
   now: string;
   timeZone: string;
   date: string;
-  shift: { name: string; startTime: string; endTime: string } | null;
+  shift: { name: string; startTime: string; endTime: string; breakStartTime: string | null; breakMinutes: number; breakAfterMinutes: number } | null;
   holiday: string | null;
   weeklyOff: boolean;
   record: DayRecord | null;
   missedCheckOutDate: string | null;
+  taskSlots: { slotStartAt: string; slotEndAt: string; task: string; savedTask: string }[];
 }
 
 function formatClock(ms: number) {
@@ -35,13 +36,16 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function breakMsSoFar(record: DayRecord, now: number) {
-  return record.breaks.reduce((sum, b) => sum + ((b.endAt ? new Date(b.endAt).getTime() : now) - new Date(b.startAt).getTime()), 0);
+  if (record.breaks.length) return record.breaks.reduce((sum, b) => sum + ((b.endAt ? new Date(b.endAt).getTime() : now) - new Date(b.startAt).getTime()), 0);
+  const elapsed = now - new Date(record.checkInAt).getTime();
+  return record.breakRuleMinutes > 0 && elapsed >= record.breakAfterMinutes * 60000 ? record.breakRuleMinutes * 60000 : 0;
 }
 
 function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => void }) {
   const { record, shift, timeZone } = today;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [taskDrafts, setTaskDrafts] = useState<Record<string, string>>({});
   // The timer follows the server's clock, in case this computer's clock is wrong.
   const [clockOffset] = useState(() => new Date(today.now).getTime() - Date.now());
   const [now, setNow] = useState(() => Date.now() + clockOffset);
@@ -52,6 +56,23 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
     const id = setInterval(() => setNow(Date.now() + clockOffset), 1000);
     return () => clearInterval(id);
   }, [running, clockOffset]);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      api<Today>('/attendance/today').then(onChange).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [running, onChange]);
+
+  useEffect(() => {
+    setTaskDrafts((current) => {
+      if (today.record?.checkOutAt) return {};
+      const next = { ...current };
+      for (const slot of today.taskSlots) if (!(slot.slotStartAt in next)) next[slot.slotStartAt] = slot.task;
+      return next;
+    });
+  }, [today.taskSlots, today.record?.checkOutAt]);
 
   const act = async (path: string) => {
     setBusy(true);
@@ -67,6 +88,24 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
     }
   };
 
+  const taskValue = (slotStartAt: string, saved: string) => taskDrafts[slotStartAt] ?? saved;
+
+  const saveTask = async (slotStartAt: string, task: string) => {
+    if (!record || !task.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api('/attendance/task-entry', { date: record.date, slotStartAt, task }, 'PUT');
+      const updated = await api<Today>('/attendance/today');
+      setTaskDrafts((current) => { const next = { ...current }; delete next[slotStartAt]; return next; });
+      onChange(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const checkOut = () => {
     if (window.confirm(`Check out at ${formatTime(new Date(now).toISOString(), timeZone)}? You can only check out once a day.`)) act('check-out');
   };
@@ -75,6 +114,13 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
   const status = !record ? 'NOT_CHECKED_IN' : record.checkOutAt ? record.status ?? 'CHECKED_OUT' : onBreak ? 'ON_BREAK' : 'IN_PROGRESS';
   const workedMs = record && !record.checkOutAt ? now - new Date(record.checkInAt).getTime() - breakMsSoFar(record, now) : 0;
   const breakMinutes = record ? record.breakMinutes ?? Math.floor(breakMsSoFar(record, now) / 60000) : 0;
+  const breakPolicy = record
+    ? { startTime: record.breakStartTime, minutes: record.breakRuleMinutes, afterMinutes: record.breakAfterMinutes }
+    : shift ? { startTime: shift.breakStartTime, minutes: shift.breakMinutes, afterMinutes: shift.breakAfterMinutes } : null;
+  const missingTasks = today.taskSlots.filter((slot) => {
+    const task = taskValue(slot.slotStartAt, slot.task);
+    return !task.trim() || task !== slot.savedTask;
+  }).length;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6">
@@ -84,6 +130,7 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
           <p className="mt-0.5 text-sm text-slate-600">
             {shift ? `${shift.name}, ${formatShiftTime(shift.startTime)} to ${formatShiftTime(shift.endTime)}` : 'No shift assigned'}
           </p>
+          {breakPolicy?.minutes ? <p className="mt-1 text-xs text-slate-500">Planned break {breakPolicy.startTime ? `around ${formatShiftTime(breakPolicy.startTime)}, ` : ''}{formatDuration(breakPolicy.minutes)} deducted after {formatDuration(breakPolicy.afterMinutes)} attendance.</p> : null}
         </div>
         <StatusBadge status={status} />
       </div>
@@ -111,22 +158,36 @@ function TodayCard({ today, onChange }: { today: Today; onChange: (t: Today) => 
               <LogIn size={20} aria-hidden /> Check in
             </Button>
           )}
-          {running && !onBreak && (
-            <SecondaryButton disabled={busy} onClick={() => act('break/start')} className="inline-flex items-center gap-2 py-3">
-              <Coffee size={18} aria-hidden /> Start break
-            </SecondaryButton>
-          )}
-          {running && onBreak && (
-            <SecondaryButton disabled={busy} onClick={() => act('break/end')} className="inline-flex items-center gap-2 py-3">
-              <Play size={18} aria-hidden /> End break
-            </SecondaryButton>
-          )}
           {running && (
-            <Button disabled={busy} onClick={checkOut} className="inline-flex items-center gap-2 py-3">
+            <Button disabled={busy || missingTasks > 0} onClick={checkOut} className="inline-flex items-center gap-2 py-3">
               <LogOut size={18} aria-hidden /> Check out
             </Button>
           )}
         </div>
+
+        {running && today.taskSlots.length > 0 && (
+          <section className="border-t border-slate-100 pt-4">
+            <h3 className="font-semibold">Hourly task log</h3>
+            <p className="mt-1 text-xs text-slate-500">Enter the task for each hour. Complete every listed slot before checking out.</p>
+            <div className="mt-3 space-y-3">
+              {today.taskSlots.map((slot) => (
+                <div key={slot.slotStartAt} className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <Field
+                    label={`${formatTime(slot.slotStartAt, timeZone)}–${formatTime(slot.slotEndAt, timeZone)}`}
+                    maxLength={200}
+                    placeholder="What did you work on?"
+                    value={taskValue(slot.slotStartAt, slot.task)}
+                    onChange={(e) => setTaskDrafts((current) => ({ ...current, [slot.slotStartAt]: e.target.value }))}
+                  />
+                  <SecondaryButton disabled={busy || !taskValue(slot.slotStartAt, slot.task).trim() || taskValue(slot.slotStartAt, slot.task) === slot.savedTask} onClick={() => saveTask(slot.slotStartAt, taskValue(slot.slotStartAt, slot.task))}>
+                    Save hour
+                  </SecondaryButton>
+                </div>
+              ))}
+            </div>
+            {missingTasks > 0 && <p className="mt-2 text-sm font-medium text-amber-800">Save {missingTasks} task {missingTasks === 1 ? 'entry' : 'entries'} to check out.</p>}
+          </section>
+        )}
 
         {record && (
           <dl className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3 lg:grid-cols-6">
